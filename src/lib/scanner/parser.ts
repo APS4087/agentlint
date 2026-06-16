@@ -1,11 +1,6 @@
 // Parses raw MCP config JSON into a normalized ParsedConfig.
 
-import type {
-  ConfigFormat,
-  ParsedConfig,
-  ParsedServer,
-  Transport,
-} from "./types";
+import type { ConfigFormat, ParsedConfig, ParsedServer } from "./types";
 
 export class ConfigParseError extends Error {
   constructor(message: string) {
@@ -20,8 +15,6 @@ type RawServer = {
   env?: unknown;
   url?: unknown;
   headers?: unknown;
-  type?: unknown;
-  transport?: unknown;
   toolDescriptions?: unknown;
 };
 
@@ -44,26 +37,6 @@ const asStringArray = (v: unknown): string[] | undefined => {
   return v.map((item) => (typeof item === "string" ? item : JSON.stringify(item)));
 };
 
-const detectTransport = (raw: RawServer): Transport => {
-  const explicit =
-    typeof raw.transport === "string"
-      ? raw.transport.toLowerCase()
-      : typeof raw.type === "string"
-        ? raw.type.toLowerCase()
-        : undefined;
-  if (explicit === "sse") return "sse";
-  if (explicit === "http" || explicit === "streamable-http" || explicit === "streamableHttp".toLowerCase())
-    return "http";
-  if (explicit === "stdio") return "stdio";
-
-  if (typeof raw.url === "string") {
-    // No explicit transport but a URL is present — assume SSE unless it
-    // looks like a plain HTTP endpoint.
-    return raw.url.includes("/sse") ? "sse" : "http";
-  }
-  return "stdio";
-};
-
 const normalizeServer = (name: string, value: unknown): ParsedServer => {
   if (!isObject(value)) {
     throw new ConfigParseError(`Server "${name}" must be an object.`);
@@ -71,7 +44,6 @@ const normalizeServer = (name: string, value: unknown): ParsedServer => {
   const raw = value as RawServer;
   return {
     name,
-    transport: detectTransport(raw),
     command: typeof raw.command === "string" ? raw.command : undefined,
     args: asStringArray(raw.args),
     env: asStringRecord(raw.env),

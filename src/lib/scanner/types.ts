@@ -1,7 +1,5 @@
 // Shared scanner types for AgentLint.
 
-export type Transport = "stdio" | "sse" | "http";
-
 export type ConfigFormat =
   | "claude-desktop"
   | "cursor"
@@ -13,7 +11,6 @@ export type Severity = "critical" | "high" | "medium" | "info";
 /** A single MCP server normalized into a common shape. */
 export interface ParsedServer {
   name: string;
-  transport: Transport;
   command?: string;
   args?: string[];
   env?: Record<string, string>;

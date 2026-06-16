@@ -5,7 +5,6 @@ import type { ParsedServer } from "./types";
 
 const srv = (over: Partial<ParsedServer>): ParsedServer => ({
   name: "s",
-  transport: "stdio",
   ...over,
 });
 
