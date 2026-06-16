@@ -8,6 +8,7 @@
 // We categorize each server by a known-package lookup table plus keyword
 // heuristics over the package/server name.
 
+import { parsePackageSpec } from "./launcher";
 import type { ParsedServer, TrifectaState } from "./types";
 
 export interface Capabilities {
@@ -167,8 +168,8 @@ const matchAny = (haystack: string, keywords: string[]): boolean =>
 const knownPackageMatch = (server: ParsedServer): Capabilities | undefined => {
   const tokens = [...(server.args ?? []), server.command ?? ""];
   for (const token of tokens) {
-    // Strip version pin (@x.y.z) but keep the scope's leading @.
-    const base = token.replace(/^(@?[^@]+).*/, "$1");
+    // parsePackageSpec strips the version pin while keeping the scope's @.
+    const base = parsePackageSpec(token).name;
     if (KNOWN_PACKAGES[base]) return KNOWN_PACKAGES[base];
     if (KNOWN_PACKAGES[token]) return KNOWN_PACKAGES[token];
   }

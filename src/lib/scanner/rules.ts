@@ -1,6 +1,7 @@
 // Deterministic static-analysis rules for MCP configs.
 // Each rule is a pure function returning zero or more findings.
 
+import { readLauncher } from "./launcher";
 import {
   analyzeTrifecta,
   trifectaCount,
@@ -85,8 +86,7 @@ const SHELL_OPERATORS = ["|", "&&", "||", ";", ">", ">>", "<", "`", "$("];
 const ruleDangerousCommands: Rule = (config) => {
   const findings: Finding[] = [];
   for (const s of config.servers) {
-    const cmd = (s.command ?? "").toLowerCase();
-    const base = cmd.split(/[\\/]/).pop() ?? cmd;
+    const base = readLauncher(s).base ?? "";
 
     if (SHELL_COMMANDS.includes(base)) {
       findings.push({
@@ -221,36 +221,20 @@ const ruleMissingAuth: Rule = (config) => {
 // Rule 5 — Unpinned Packages (MEDIUM, ASI04)
 // ---------------------------------------------------------------------------
 
-const RUNNERS = ["npx", "uvx", "pnpx", "bunx"];
-
-const isPackageSpec = (token: string): boolean =>
-  !token.startsWith("-") && (token.startsWith("@") || /^[a-z0-9]/i.test(token));
-
-const isVersionPinned = (spec: string): boolean => {
-  // Scoped: @scope/name@1.2.3   Unscoped: name@1.2.3
-  if (spec.startsWith("@")) {
-    return spec.split("/").length === 2 && spec.lastIndexOf("@") > 0;
-  }
-  return spec.includes("@");
-};
-
 const ruleUnpinnedPackages: Rule = (config) => {
   const findings: Finding[] = [];
   for (const s of config.servers) {
-    const cmdBase = (s.command ?? "").split(/[\\/]/).pop()?.toLowerCase() ?? "";
-    if (!RUNNERS.includes(cmdBase)) continue;
+    const { base, isPackageRunner, pkg } = readLauncher(s);
+    if (!isPackageRunner || !pkg) continue;
 
-    const args = s.args ?? [];
-    // The package spec is the first non-flag argument.
-    const spec = args.find((a) => isPackageSpec(a));
-    if (spec && !isVersionPinned(spec)) {
+    if (!pkg.pinned) {
       findings.push({
         ruleId: "unpinned-packages",
         severity: "medium",
         title: "Unpinned package version",
-        description: `"${cmdBase} ${spec}" installs the latest version at runtime with no version pin. A compromised or rug-pulled release would be pulled in automatically.`,
+        description: `"${base} ${pkg.raw}" installs the latest version at runtime with no version pin. A compromised or rug-pulled release would be pulled in automatically.`,
         server: s.name,
-        evidence: `${cmdBase} ${truncate(spec)}`,
+        evidence: `${base} ${truncate(pkg.raw)}`,
         owaspCategory: "ASI04",
         remediation:
           "Pin the exact version (e.g. @scope/package@1.2.3) to prevent silent supply-chain changes.",
@@ -427,7 +411,7 @@ const ruleNetworkExposure: Rule = (config) => {
       blob.includes("0.0.0.0") ||
       /(^|\s)\*:\d+/.test(blob) ||
       /--host\s+0\.0\.0\.0/.test(blob) ||
-      args.some((a) => a === "--host" && true && args[args.indexOf(a) + 1] === "0.0.0.0");
+      args.some((a, i) => a === "--host" && args[i + 1] === "0.0.0.0");
 
     if (exposed) {
       findings.push({
@@ -463,15 +447,11 @@ const KNOWN_GOOD_UNSCOPED = new Set([
 const ruleUnscopedPackages: Rule = (config) => {
   const findings: Finding[] = [];
   for (const s of config.servers) {
-    const cmdBase = (s.command ?? "").split(/[\\/]/).pop()?.toLowerCase() ?? "";
-    if (!RUNNERS.includes(cmdBase)) continue;
+    const { base, isPackageRunner, pkg } = readLauncher(s);
+    if (!isPackageRunner || !pkg) continue;
+    if (pkg.scoped) continue; // scoped — handled elsewhere
 
-    const spec = (s.args ?? []).find((a) => isPackageSpec(a));
-    if (!spec) continue;
-
-    if (spec.startsWith("@")) continue; // scoped — handled elsewhere
-
-    const nameOnly = spec.split("@")[0];
+    const nameOnly = pkg.name;
     const reasons: string[] = [];
     if (!KNOWN_GOOD_UNSCOPED.has(nameOnly)) reasons.push("unscoped (no @org/ prefix)");
     if (nameOnly.length <= 3) reasons.push("very short name (typosquatting risk)");
@@ -481,9 +461,9 @@ const ruleUnscopedPackages: Rule = (config) => {
         ruleId: "unscoped-packages",
         severity: "medium",
         title: "Unscoped or unknown package",
-        description: `Package "${spec}" is ${reasons.join(" and ")}. Unscoped packages are easier to typosquat or impersonate than scoped, verified ones.`,
+        description: `Package "${pkg.raw}" is ${reasons.join(" and ")}. Unscoped packages are easier to typosquat or impersonate than scoped, verified ones.`,
         server: s.name,
-        evidence: `${cmdBase} ${truncate(spec)}`,
+        evidence: `${base} ${truncate(pkg.raw)}`,
         owaspCategory: "ASI04",
         remediation:
           "Prefer scoped packages from known publishers (e.g. @modelcontextprotocol/...). Verify authenticity before installing.",
