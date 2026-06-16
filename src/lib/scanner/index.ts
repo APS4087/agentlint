@@ -1,6 +1,6 @@
 // Scanner orchestrator: parse → run rules → compute risk → assemble result.
 
-import { analyzeTrifecta } from "./lethal-trifecta";
+import { analyzeTrifecta, trifectaFindings } from "./lethal-trifecta";
 import { parseConfig, ConfigParseError } from "./parser";
 import { runRules } from "./rules";
 import type {
@@ -54,9 +54,13 @@ export const scanConfig = (
   hint?: ConfigFormat | "auto",
 ): ScanResult => {
   const parsed = parseConfig(input, hint);
-  const findings = sortFindings(runRules(parsed));
-  const counts = countBySeverity(findings);
+  // Analyze the trifecta once; it feeds both the findings and the result.
   const trifecta = analyzeTrifecta(parsed.servers);
+  const findings = sortFindings([
+    ...runRules(parsed),
+    ...trifectaFindings(trifecta),
+  ]);
+  const counts = countBySeverity(findings);
 
   return {
     format: parsed.format,

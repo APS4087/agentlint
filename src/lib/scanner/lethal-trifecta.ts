@@ -9,7 +9,7 @@
 // heuristics over the package/server name.
 
 import { parsePackageSpec } from "./launcher";
-import type { ParsedServer, TrifectaState } from "./types";
+import type { Finding, ParsedServer, TrifectaState } from "./types";
 
 export interface Capabilities {
   dataAccess: boolean;
@@ -234,5 +234,53 @@ export const trifectaCount = (state: TrifectaState): number =>
   [state.dataAccess, state.untrustedContent, state.externalComms].filter(
     Boolean,
   ).length;
+
+/**
+ * Build the lethal-trifecta finding(s) from an already-computed state. Kept
+ * here (not as a config-level Rule) so the analysis is run once by the
+ * orchestrator and feeds both the ScanResult and the findings.
+ */
+export const trifectaFindings = (state: TrifectaState): Finding[] => {
+  const count = trifectaCount(state);
+  if (count < 2) return [];
+
+  const present: string[] = [];
+  if (state.dataAccess)
+    present.push(`private-data access (${state.contributors.dataAccess.join(", ")})`);
+  if (state.untrustedContent)
+    present.push(`untrusted content (${state.contributors.untrustedContent.join(", ")})`);
+  if (state.externalComms)
+    present.push(`external communication (${state.contributors.externalComms.join(", ")})`);
+
+  if (count === 3) {
+    return [
+      {
+        ruleId: "lethal-trifecta",
+        severity: "critical",
+        title: "Lethal trifecta present",
+        description: `This config combines all three lethal-trifecta capabilities — ${present.join("; ")}. An attacker who plants instructions in untrusted content can make the agent read private data and exfiltrate it externally.`,
+        server: "config",
+        evidence: present.join(" + "),
+        owaspCategory: "ASI02",
+        remediation:
+          "Separate agents by trust boundary. Never combine data-access, untrusted-content, and external-communication tools in a single agent.",
+      },
+    ];
+  }
+
+  return [
+    {
+      ruleId: "lethal-trifecta",
+      severity: "high",
+      title: "Two of three lethal-trifecta capabilities present",
+      description: `This config combines two trifecta capabilities — ${present.join("; ")}. Adding the third would make data exfiltration trivially achievable; treat this as one step away from critical.`,
+      server: "config",
+      evidence: present.join(" + "),
+      owaspCategory: "ASI02",
+      remediation:
+        "Keep the missing capability out of this agent, and review whether these two truly need to coexist.",
+    },
+  ];
+};
 
 export const EMPTY_CAPABILITIES = EMPTY;

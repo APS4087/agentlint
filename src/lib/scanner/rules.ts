@@ -2,10 +2,6 @@
 // Each rule is a pure function returning zero or more findings.
 
 import { readLauncher } from "./launcher";
-import {
-  analyzeTrifecta,
-  trifectaCount,
-} from "./lethal-trifecta";
 import type { Finding, ParsedConfig, ParsedServer, Rule } from "./types";
 
 const truncate = (value: string, max = 200): string =>
@@ -297,54 +293,6 @@ const ruleSuspiciousDescriptions: Rule = (config) => {
 };
 
 // ---------------------------------------------------------------------------
-// Rule 7 — Lethal Trifecta (CRITICAL/HIGH, ASI02)
-// ---------------------------------------------------------------------------
-
-const ruleLethalTrifecta: Rule = (config) => {
-  const state = analyzeTrifecta(config.servers);
-  const count = trifectaCount(state);
-  if (count < 2) return [];
-
-  const present: string[] = [];
-  if (state.dataAccess)
-    present.push(`private-data access (${state.contributors.dataAccess.join(", ")})`);
-  if (state.untrustedContent)
-    present.push(`untrusted content (${state.contributors.untrustedContent.join(", ")})`);
-  if (state.externalComms)
-    present.push(`external communication (${state.contributors.externalComms.join(", ")})`);
-
-  if (count === 3) {
-    return [
-      {
-        ruleId: "lethal-trifecta",
-        severity: "critical",
-        title: "Lethal trifecta present",
-        description: `This config combines all three lethal-trifecta capabilities — ${present.join("; ")}. An attacker who plants instructions in untrusted content can make the agent read private data and exfiltrate it externally.`,
-        server: "config",
-        evidence: present.join(" + "),
-        owaspCategory: "ASI02",
-        remediation:
-          "Separate agents by trust boundary. Never combine data-access, untrusted-content, and external-communication tools in a single agent.",
-      },
-    ];
-  }
-
-  return [
-    {
-      ruleId: "lethal-trifecta",
-      severity: "high",
-      title: "Two of three lethal-trifecta capabilities present",
-      description: `This config combines two trifecta capabilities — ${present.join("; ")}. Adding the third would make data exfiltration trivially achievable; treat this as one step away from critical.`,
-      server: "config",
-      evidence: present.join(" + "),
-      owaspCategory: "ASI02",
-      remediation:
-        "Keep the missing capability out of this agent, and review whether these two truly need to coexist.",
-    },
-  ];
-};
-
-// ---------------------------------------------------------------------------
 // Rule 8 — Privilege Escalation (HIGH, ASI03)
 // ---------------------------------------------------------------------------
 
@@ -482,7 +430,6 @@ export const RULES: Rule[] = [
   ruleMissingAuth,
   ruleUnpinnedPackages,
   ruleSuspiciousDescriptions,
-  ruleLethalTrifecta,
   rulePrivilegeEscalation,
   ruleNetworkExposure,
   ruleUnscopedPackages,
